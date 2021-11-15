@@ -4,6 +4,7 @@ import requests
 import time
 import pandas as pd
 import re
+import random
 
 folder_path = os.path.abspath("./")
 
@@ -48,17 +49,20 @@ def get_dataframe():
 def get_specific_card(words, card_name):
     #Get the card name and make it into a list
     words = words.strip().title().split()
-    
+    itFound = False
     #Test every single word in the list trying to find the matching card
     for word in words:
         if len(card_name[card_name['simpleName'].str.contains(word) == True]) > 0: 
             card_name = card_name[card_name['simpleName'].str.contains(word)]
+            itFound = True
     
     #If a card with the given name exists, those cards are selected
     #If a new name match in that subgroup, those cards are selected
     #Repeat until the end
-    
-    return(card_name)
+    if itFound == True:
+        return(card_name, True)
+    else:
+        return(card_name, False)
 
 #Get the lowest card price data
 def lowPrice(card_data):
@@ -79,6 +83,17 @@ def highPrice(card_data):
     #Get the name of the card and the download link
     name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
     link = (card_data['front_image'][card_data['highPrice'] == highPrice_value].iloc[0])
+    
+    return([name, highPrice_value, link])
+
+def highPrice_randomLink(card_data):
+    #Get the highest price card from the dataframe
+    card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
+    highPrice_value = card_data['highPrice'].max()
+    #Get the name of the card and the download link
+    name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
+    random_link = random.randint(0, card_data.shape[0])
+    link = (card_data['front_image'].iloc[random_link])
     
     return([name, highPrice_value, link])
 
@@ -116,7 +131,17 @@ def post(lowValue, highValue, api, tweet):
     
     #Answer the tweet
     api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)
-        
+
+def cant_find_card(api, tweet):
+
+    screen_name = tweet._json['user']['screen_name']
+
+    msg = 'I\'m sorry, @%s. I can\'t find your card :/\n\nCould you be more specific?' % (screen_name)
+
+    #Answer the tweet
+    api.update_status(status = msg, in_reply_to_status_id = tweet.id)
+
+
 #Clean the tweet to make it easier to match 
 def text_preparation(text):
     text = text.lower()
@@ -130,27 +155,40 @@ def text_preparation(text):
     text = text.replace("[", "")
     text = text.replace("]", "")
     text = text.replace("\n", " ")
+    text = text.replace("  ", " ")
     text = re.search(r'@mtg_robot find(.*)', text)[0].replace("@mtg_robot find", "")
     
     return(text)
     
 #Process a new mention and post
 def process_tweet(tweet, data):
-    print(tweet.full_text)
+    #print(tweet.full_text)
     #Get the card name
     name = text_preparation(tweet.full_text)
-    print(name)
+    #print(name)
     #Find the card in the dataframe
-    specific_card = get_specific_card(name, data)
+    specific_card, itFound = get_specific_card(name, data)
     
-    #Get the lowest cost card with the matching name
-    lowValue = lowPrice(specific_card)
-    download_card(lowValue, 'low') #Download the cheapest card
-    #Get the lowest cost card with the matching name
-    highValue = highPrice(specific_card)
-    download_card(highValue, 'high') #Download the most expensive card
-    
-    post(lowValue, highValue, api, tweet) #Answer the tweet
+    if itFound == False:
+        cant_find_card(api, tweet)
+
+    else:
+        #Get the lowest cost card with the matching name
+        lowValue = lowPrice(specific_card)
+        #Get the highest cost card with the matching name
+        highValue = highPrice(specific_card)
+
+        if lowValue[0] == highValue[0]: #Check if the code found only one card
+            highValue = highPrice_randomLink(specific_card) #Get the highest price value, but with a random link of the card
+            download_card(highValue, 'high') #Download the most expensive card
+            #If there's only one card, the code will post the link of the highValue one
+            #This part of the code makes it be the card of any possible collection to generate variety
+
+        else:
+            download_card(highValue, 'high') #Download the most expensive card
+            download_card(lowValue, 'low') #Download the cheapest card
+            
+        post(lowValue, highValue, api, tweet) #Answer the tweet
         
 if __name__ == "__main__":
 
@@ -169,9 +207,10 @@ if __name__ == "__main__":
         try: #Tries to run
             newMentions = api.mentions_timeline(tweet_mode="extended") #Get the mentions of the last 30 seconds
 
-            if time.time() - timeCounter > 86400: #Loads a new dataframe every 24 hours
+            if (time.time() - timeCounter) > 43200: #Loads a new dataframe every 24 hours
                 print("Loading new dataframe")
                 data = get_dataframe()
+                timeCounter = time.time()
                 
             if newMentions[0].id > oldMention: #If there's new mention
                 i = 0
@@ -185,8 +224,9 @@ if __name__ == "__main__":
                         except: #If it breaks, skips the mention
                             print("erro")
                         i += 1
-            else:
-                print("-")
+                else:
+                    #print("-")
+                    pass
         except: #If the loop breaks, it will try again
            print("deu ruim")
 
