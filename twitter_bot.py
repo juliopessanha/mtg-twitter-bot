@@ -25,9 +25,9 @@ def get_credentials():
     return(credentials) #Returning list of credentials
 
 #Download the card of the given link
-def download_card(card_data, priceType):
+def download_card(url, priceType):
     #Gets the card data list and the name afix definition. It may be "high" or "low"
-    url = card_data[2] #Get the link from the card data list
+    #url = card_data[2] #Get the link from the card data list
     r = requests.get(url, allow_redirects=True) #Download
     open(folder_path + '/mtg_card_' + priceType + '.png', 'wb').write(r.content) #And save the card
 
@@ -35,7 +35,8 @@ def download_card(card_data, priceType):
 def get_dataframe():
     df = pd.read_excel(folder_path + '/mtg_data.xlsx')
     #simpleName is the card name but made simpler to match from the twitter text
-    df['simpleName'] = df['name'].replace({',': ''}, regex=True)
+    df['simpleName'] = df['name'].str.lower()
+    df['simpleName'] = df['simpleName'].replace({',': ''}, regex=True)
     df['simpleName'] = df['simpleName'].replace({"'s": ''}, regex=True)
     df['simpleName'] = df['simpleName'].replace({":": ''}, regex=True)
     #Remove the set name like (Crimson Vow)
@@ -48,7 +49,7 @@ def get_dataframe():
 #Get the card name and return a dataframe with the possible cards it might be
 def get_specific_card(words, card_name):
     #Get the card name and make it into a list
-    words = words.strip().title().split()
+    words = words.strip().lower().split()
     itFound = False
     #Test every single word in the list trying to find the matching card
     for word in words:
@@ -68,7 +69,7 @@ def get_specific_card(words, card_name):
 def lowPrice(card_data):
     #Get the highest price card from the dataframe
     card_data["lowPrice"] = pd.to_numeric(card_data['lowPrice'][card_data['lowPrice'] != '-'], downcast="float")
-    lowPrice_value = card_data['lowPrice'].min()
+    lowPrice_value = round(card_data['lowPrice'].min(), 2)
     #Get the name of the card and the download link
     name = (card_data['name'][card_data['lowPrice'] == lowPrice_value].iloc[0])
     link = (card_data['front_image'][card_data['lowPrice'] == lowPrice_value].iloc[0])    
@@ -79,23 +80,37 @@ def lowPrice(card_data):
 def highPrice(card_data):
     #Get the highest price card from the dataframe
     card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
-    highPrice_value = card_data['highPrice'].max()
+    highPrice_value = round(card_data['highPrice'].max(), 2)
     #Get the name of the card and the download link
     name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
     link = (card_data['front_image'][card_data['highPrice'] == highPrice_value].iloc[0])
     
     return([name, highPrice_value, link])
 
+#Get a random image of the card
 def highPrice_randomLink(card_data):
     #Get the highest price card from the dataframe
     card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
-    highPrice_value = card_data['highPrice'].max()
+    highPrice_value = round(card_data['highPrice'].max(), 2)
     #Get the name of the card and the download link
     name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
-    random_link = random.randint(0, card_data.shape[0])
+    random_link = random.randint(0, card_data.shape[0]-1)
     link = (card_data['front_image'].iloc[random_link])
     
     return([name, highPrice_value, link])
+
+#Get both faces of the double face card
+def highPrice_DFC(card_data):
+    #Get the highest price card from the dataframe
+    card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
+    highPrice_value = round(card_data['highPrice'].max(), 2)
+    #Get the name of the card and the download link
+    name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
+    random_link = random.randint(0, card_data.shape[0]-1)
+    link = [card_data['front_image'].iloc[random_link], card_data['back_image'].iloc[random_link]]
+    
+    return([name, highPrice_value, link])
+
 
 #Get tweet credentials and connect
 def twitter(credentials):
@@ -131,6 +146,22 @@ def post(lowValue, highValue, api, tweet):
     
     #Answer the tweet
     api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)
+                                                                
+#Prepare and post tweet
+def postDFC(lowValue, highValue, api, tweet):
+    
+    screen_name = tweet._json['user']['screen_name']
+                                                                
+    media_path = [folder_path + '/mtg_card_high.png', folder_path + '/mtg_card_low.png']
+
+    media_ids = [api.media_upload(i).media_id_string for i in media_path]
+
+    msg = 'Hi, @%s. Here\'s your card:\n%s\n\n \
+    Lowest price: $%s\n \
+    Highest price: $%s' % (screen_name, highValue[0], lowValue[1], highValue[1])
+    
+    #Answer the tweet
+    api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)                                               
 
 def cant_find_card(api, tweet):
 
@@ -154,6 +185,7 @@ def text_preparation(text):
     text = text.replace("}", "")
     text = text.replace("[", "")
     text = text.replace("]", "")
+    text = text.replace("-", " ")
     text = text.replace("\n", " ")
     text = text.replace("  ", " ")
     text = re.search(r'@mtg_robot find(.*)', text)[0].replace("@mtg_robot find", "")
@@ -179,15 +211,24 @@ def process_tweet(tweet, data):
         highValue = highPrice(specific_card)
 
         if lowValue[0] == highValue[0]: #Check if the code found only one card
-            highValue = highPrice_randomLink(specific_card) #Get the highest price value, but with a random link of the card
-            download_card(highValue, 'high') #Download the most expensive card
-            #If there's only one card, the code will post the link of the highValue one
-            #This part of the code makes it be the card of any possible collection to generate variety
+            
+            if "//" in highValue[0]: #Check if it's a double faced card
+                highValue = highPrice_DFC(specific_card) #Get the card with two links
+                download_card(highValue[2][0], 'high') #Download front
+                download_card(highValue[2][1], 'low') #Download back
+                postDFC(lowValue, highValue, api, tweet) #Post as double faced card
+                return(None)
+                                                                
+            else: #If it's not a double faced card
+                highValue = highPrice_randomLink(specific_card) #Get the highest price value, but with a random link of the card
+                download_card(highValue[2], 'high') #Download the most expensive card
+                #If there's only one card, the code will post the link of the highValue one
+                #This part of the code makes it be the card of any possible collection to generate variety
 
         else:
-            download_card(highValue, 'high') #Download the most expensive card
-            download_card(lowValue, 'low') #Download the cheapest card
-            
+            download_card(highValue[2], 'high') #Download the most expensive card
+            download_card(lowValue[2], 'low') #Download the cheapest card
+
         post(lowValue, highValue, api, tweet) #Answer the tweet
         
 if __name__ == "__main__":
@@ -211,7 +252,7 @@ if __name__ == "__main__":
                 print("Loading new dataframe")
                 data = get_dataframe()
                 timeCounter = time.time()
-                
+
             if newMentions[0].id > oldMention: #If there's new mention
                 i = 0
                 while 1: #Go through each new mention
@@ -228,6 +269,6 @@ if __name__ == "__main__":
                     #print("-")
                     pass
         except: #If the loop breaks, it will try again
-           print("deu ruim")
+            print("deu ruim")
 
         time.sleep(15) #Some delay
