@@ -131,9 +131,15 @@ def post(lowValue, highValue, api, tweet):
 
         media_ids = [api.media_upload(i).media_id_string for i in media_path]
         
-        msg = 'Hi, @%s. Here\'s your card:\n%s\n\n \
-        Lowest price: $%s\n \
-        Highest price: $%s' % (screen_name, highValue[0], lowValue[1], highValue[1])
+        msg = 'Hi, @%s. Here\'s your card:\n%s\n\n' % (screen_name, highValue[0])
+        
+        if lowValue[1] == highValue[1]:
+            msg = msg + '        Price: $%s\n' % lowValue[1]
+        
+        else:
+            msg = msg + '        Lowest price: $%s\n' % (lowValue[1])
+            msg = msg + '        Highest price: $%s' % (highValue[1])
+
     
     else: #if the code found conflicting card names, it returns the highest and lowest price among them
         media_path = [folder_path + '/mtg_card_low.png', folder_path + '/mtg_card_high.png']
@@ -156,9 +162,14 @@ def postDFC(lowValue, highValue, api, tweet):
 
     media_ids = [api.media_upload(i).media_id_string for i in media_path]
 
-    msg = 'Hi, @%s. Here\'s your card:\n%s\n\n \
-    Lowest price: $%s\n \
-    Highest price: $%s' % (screen_name, highValue[0], lowValue[1], highValue[1])
+    msg = 'Hi, @%s. Here\'s your card:\n%s\n\n' % (screen_name, highValue[0])
+
+    if lowValue[1] == highValue[1]:
+        msg = msg + '        Price: $%s\n' % lowValue[1]
+
+    else:
+        msg = msg + '        Lowest price: $%s\n' % (lowValue[1])
+        msg = msg + '        Highest price: $%s' % (highValue[1])
     
     #Answer the tweet
     api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)                                               
@@ -196,10 +207,14 @@ def text_preparation(text):
 def process_tweet(tweet, data):
     #print(tweet.full_text)
     #Get the card name
-    name = text_preparation(tweet.full_text)
-    #print(name)
+    name = text_preparation(tweet.full_text).strip()
+    print(name)
     #Find the card in the dataframe
+
     specific_card, itFound = get_specific_card(name, data)
+    
+    #How many different cards the code found
+    #amount_of_cards = len(specific_card.simpleName.unique())
     
     if itFound == False:
         cant_find_card(api, tweet)
@@ -216,7 +231,7 @@ def process_tweet(tweet, data):
                 highValue = highPrice_DFC(specific_card) #Get the card with two links
                 download_card(highValue[2][0], 'high') #Download front
                 download_card(highValue[2][1], 'low') #Download back
-                postDFC(lowValue, highValue, api, tweet) #Post as double faced card
+                postDFC(lowValue, highValue, api, tweet)#, amount_of_cards) #Post as double faced card
                 return(None)
                                                                 
             else: #If it's not a double faced card
@@ -228,8 +243,8 @@ def process_tweet(tweet, data):
         else:
             download_card(highValue[2], 'high') #Download the most expensive card
             download_card(lowValue[2], 'low') #Download the cheapest card
-
-        post(lowValue, highValue, api, tweet) #Answer the tweet
+        
+        post(lowValue, highValue, api, tweet)#, amount_of_cards) #Answer the tweet
         
 if __name__ == "__main__":
 
