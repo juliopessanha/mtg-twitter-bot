@@ -69,10 +69,16 @@ def get_specific_card(words, card_name):
 def lowPrice(card_data):
     #Get the highest price card from the dataframe
     card_data["lowPrice"] = pd.to_numeric(card_data['lowPrice'][card_data['lowPrice'] != '-'], downcast="float")
+    global lowPrice_value
     lowPrice_value = round(card_data['lowPrice'].min(), 2)
     #Get the name of the card and the download link
-    name = (card_data['name'][card_data['lowPrice'] == lowPrice_value].iloc[0])
-    link = (card_data['front_image'][card_data['lowPrice'] == lowPrice_value].iloc[0])    
+    if (lowPrice_value == lowPrice_value): #if the number is equal to itself, it's a number
+        name = (card_data['name'][card_data['lowPrice'] == lowPrice_value].iloc[0])
+        link = (card_data['front_image'][card_data['lowPrice'] == lowPrice_value].iloc[0])   
+
+    else: #if it's not equal to itself, then it's a 'nan'. This means the only price found was '-'
+        name = card_data['name'].iloc[0]
+        link = (card_data['front_image'].iloc[0])
     
     return([name, lowPrice_value, link])
 
@@ -82,8 +88,13 @@ def highPrice(card_data):
     card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
     highPrice_value = round(card_data['highPrice'].max(), 2)
     #Get the name of the card and the download link
-    name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
-    link = (card_data['front_image'][card_data['highPrice'] == highPrice_value].iloc[0])
+    if (highPrice_value == highPrice_value): #if the number is equal to itself, it's a number
+        name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
+        link = (card_data['front_image'][card_data['highPrice'] == highPrice_value].iloc[0])
+        
+    else: #if it's not equal to itself, then it's a 'nan'. This means the only price found was '-'
+        name = card_data['name'].iloc[0]
+        link = (card_data['front_image'].iloc[0])
     
     return([name, highPrice_value, link])
 
@@ -93,9 +104,14 @@ def highPrice_randomLink(card_data):
     card_data["highPrice"] = pd.to_numeric(card_data['highPrice'][card_data['highPrice'] != '-'], downcast="float")
     highPrice_value = round(card_data['highPrice'].max(), 2)
     #Get the name of the card and the download link
-    name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
     random_link = random.randint(0, card_data.shape[0]-1)
-    link = (card_data['front_image'].iloc[random_link])
+    if (highPrice_value == highPrice_value): #if the number is equal to itself, it's a number
+        name = (card_data['name'][card_data['highPrice'] == highPrice_value].iloc[0])
+        link = (card_data['front_image'].iloc[random_link])
+        
+    else: #if it's not equal to itself, then it's a 'nan'. This means the only price found was '-'
+        name = card_data['name'].iloc[0]
+        link = (card_data['front_image'].iloc[random_link])
     
     return([name, highPrice_value, link])
 
@@ -135,6 +151,9 @@ def post(lowValue, highValue, api, tweet):
         
         if lowValue[1] == highValue[1]:
             msg = msg + '        Price: $%s\n' % lowValue[1]
+            
+        elif (str(lowValue[1]) == 'nan' or str(highValue[1]) == 'nan'): #If the card has no price
+            msg = msg + '        No price available'
         
         else:
             msg = msg + '        Lowest price: $%s\n' % (lowValue[1])
@@ -151,6 +170,7 @@ def post(lowValue, highValue, api, tweet):
         Highest price: $%s' % (screen_name, lowValue[0], highValue[0], lowValue[1], highValue[1])
     
     #Answer the tweet
+
     api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)
                                                                 
 #Prepare and post tweet
@@ -167,11 +187,15 @@ def postDFC(lowValue, highValue, api, tweet):
     if lowValue[1] == highValue[1]:
         msg = msg + '        Price: $%s\n' % lowValue[1]
 
+    elif (str(lowValue[1]) == 'nan' or str(highValue[1]) == 'nan'): #If the card has no price
+        msg = msg + '        No price available'
+        
     else:
         msg = msg + '        Lowest price: $%s\n' % (lowValue[1])
         msg = msg + '        Highest price: $%s' % (highValue[1])
     
     #Answer the tweet
+
     api.update_status(status = msg, media_ids = media_ids, in_reply_to_status_id = tweet.id)                                               
 
 def cant_find_card(api, tweet):
@@ -181,6 +205,7 @@ def cant_find_card(api, tweet):
     msg = 'I\'m sorry, @%s. I can\'t find your card :/\n\nCould you be more specific?' % (screen_name)
 
     #Answer the tweet
+
     api.update_status(status = msg, in_reply_to_status_id = tweet.id)
 
 
@@ -224,7 +249,7 @@ def process_tweet(tweet, data):
         lowValue = lowPrice(specific_card)
         #Get the highest cost card with the matching name
         highValue = highPrice(specific_card)
-
+        
         if lowValue[0] == highValue[0]: #Check if the code found only one card
             
             if "//" in highValue[0]: #Check if it's a double faced card
@@ -252,7 +277,7 @@ if __name__ == "__main__":
     credentials = get_credentials()
 
     api = twitter(credentials)
-    
+
     data = get_dataframe()
     
     #Get the last mention id
